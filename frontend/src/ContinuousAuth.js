@@ -1,11 +1,11 @@
-// ContinuousAuthWithoutSpeech.js
+// ContinuousAuth.js
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import * as faceapi from "face-api.js";
 import Webcam from "react-webcam";
 import "./ContinuousAuth.css";
 import axios from "axios";
 
-const ContinuousAuthWithoutSpeech = () => {
+const ContinuousAuth = () => {
   const webcamRef = useRef(null);
   const referenceDescriptorRef = useRef(null);
   const [faceDetected, setFaceDetected] = useState(false);
@@ -21,19 +21,29 @@ const ContinuousAuthWithoutSpeech = () => {
   const [capturedImages, setCapturedImages] = useState([]);
   const [faceAbsenceCount, setFaceAbsenceCount] = useState(0);
 
-  // 🔊 Play sound using Web Audio API
-  const playAlertSound = () => {
-    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioContext.createOscillator();
-    const gainNode = audioContext.createGain();
-    oscillator.type = "square";
+  // Play sound using Web Audio API
+  const playAlertSound = (level = "normal") => {
+  const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  const oscillator = audioContext.createOscillator();
+  const gainNode = audioContext.createGain();
+  oscillator.type = "square";
+
+  if (level === "warning") {
+    oscillator.frequency.setValueAtTime(1000, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+  } else if (level === "critical") {
+    oscillator.frequency.setValueAtTime(1500, audioContext.currentTime);
+    gainNode.gain.setValueAtTime(0.5, audioContext.currentTime);
+  } else {
     oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
     gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
-    oscillator.connect(gainNode);
-    gainNode.connect(audioContext.destination);
-    oscillator.start();
-    setTimeout(() => oscillator.stop(), 500);
-  };
+  }
+
+  oscillator.connect(gainNode);
+  gainNode.connect(audioContext.destination);
+  oscillator.start();
+  setTimeout(() => oscillator.stop(), 600);
+};
 
   // Load required models
   useEffect(() => {
@@ -93,24 +103,24 @@ const ContinuousAuthWithoutSpeech = () => {
   }, [permissionsGranted]);
 
   useEffect(() => {
-    if (noFaceDuration >= 30) {
+    if (noFaceDuration >= 5) {
       setFaceAbsenceCount((prev) => {
         const count = prev + 1;
         if (count === 4) {
           setTimeout(() => {
-            playAlertSound();
-            alert("⚠ You have been absent for 30 seconds four times. Next time you will be removed from the exam.");
+            playAlertSound("warning");
+            alert("⚠ You have been absent for 5 seconds four times. Next time you will be removed from the exam.");
           }, 0);
         } else if (count >= 5) {
           setTimeout(() => {
-            playAlertSound();
-            alert("✖ You have been absent for 30 seconds five times. Exam will be terminated.");
+            playAlertSound("critical");
+            alert("✖ You have been absent for 5 seconds five times. Exam will be terminated.");
           }, 0);
           terminateExam();
         } else {
           setTimeout(() => {
-            playAlertSound();
-            alert(`⚠ Face not detected for 30 seconds. This is your ${count}th absence.`);
+            playAlertSound("normal");
+            alert(`⚠ Face not detected for 5 seconds. This is your ${count}th absence.`);
           }, 0);
         }
         return count;
@@ -143,79 +153,88 @@ const ContinuousAuthWithoutSpeech = () => {
     }
   }, [permissionsGranted, detectSound]);
 
-  const captureAndSendImage = async () => {
-    if (!webcamRef.current) return;
-    const imageSrc = webcamRef.current.getScreenshot();
-    setCurrentImage(imageSrc);
+  const captureAndSendImage = async (violationType = "faceMismatch") => {
+  if (!webcamRef.current) return;
+  const imageSrc = webcamRef.current.getScreenshot();
+  setCurrentImage(imageSrc);
 
-    try {
-      const img = await faceapi.fetchImage(imageSrc);
-      const detection = await faceapi
-        .detectSingleFace(img, new faceapi.SsdMobilenetv1Options())
-        .withFaceLandmarks()
-        .withFaceDescriptor();
+  try {
+    const img = await faceapi.fetchImage(imageSrc);
+    const detection = await faceapi
+      .detectSingleFace(img, new faceapi.SsdMobilenetv1Options())
+      .withFaceLandmarks()
+      .withFaceDescriptor();
 
-      if (!detection) {
-        console.log("❌ No face detected in current frame");
-        return;
-      }
-
-      if (!referenceDescriptorRef.current) {
-        referenceDescriptorRef.current = detection.descriptor;
-        console.log("✅ First face detected and set as reference");
-        return;
-      }
-
-      const distance = faceapi.euclideanDistance(referenceDescriptorRef.current, detection.descriptor);
-      const similarity = (1 - distance) * 100;
-      console.log(`📏 Euclidean Distance: ${distance.toFixed(4)}`);
-      console.log(`🔎 Similarity Score: ${similarity.toFixed(2)}%`);
-
-      const threshold = 0.7;
-      const similarityThreshold = 55;
-
-      if (distance <= threshold && similarity >= similarityThreshold) {
-        console.log("✅ Face matched successfully (based on distance and similarity)");
-        return;
-      }
-
-      console.log("⚠️ Different person detected! Sending violation.");
-      setTimeout(() => {
-        playAlertSound();
-        alert("⚠️ Different person detected!");
-      }, 0);
-
+    // لو نوع المخالفة "absence" مش هنحتاج نحلل الوجه، فقط نحفظ الصورة كدليل
+    if (violationType === "absence" || !detection) {
+      console.log("Sending absence violation...");
       const violationData = {
-        studentId: "student_123",
-        examId: "exam_456",
+        studentId: "86",
+        examId: "exam_1",
         image: imageSrc,
         timestamp: new Date().toISOString(),
+        type: "absence", 
       };
 
-      try {
-        await axios.post("http://localhost:5000/api/violation", violationData);
-        setViolationCount((prev) => {
-          const newCount = prev + 1;
-          if (newCount >= 3) {
-            setTimeout(() => {
-              playAlertSound();
-              alert("✖ Exam terminated due to multiple violations.");
-            }, 0);
-            terminateExam();
-          }
-          return newCount;
-        });
-      } catch (err) {
-        console.error("Error sending violation to server", err);
-      }
-    } catch (err) {
-      console.error("Error analyzing face", err);
+      await axios.post("http://localhost:5000/api/violation", violationData);
+      return;
     }
-  };
+
+    // تحقق من تطابق الوجه
+    if (!referenceDescriptorRef.current) {
+      referenceDescriptorRef.current = detection.descriptor;
+      console.log("First face detected and set as reference");
+      return;
+    }
+
+    const distance = faceapi.euclideanDistance(referenceDescriptorRef.current, detection.descriptor);
+    const similarity = (1 - distance) * 100;
+    console.log(`Euclidean Distance: ${distance.toFixed(4)}`);
+    console.log(`Similarity Score: ${similarity.toFixed(2)}%`);
+
+    const threshold = 0.7;
+    const similarityThreshold = 55;
+
+    if (distance <= threshold && similarity >= similarityThreshold) {
+      console.log("Face matched successfully (based on distance and similarity)");
+      return;
+    }
+
+    console.log("⚠️ Different person detected! Sending violation.");
+    setTimeout(() => {
+      playAlertSound("warning");
+      alert("⚠️ Different person detected!");
+    }, 0);
+
+    const violationData = {
+      studentId: "86",
+      examId: "exam_1",
+      image: imageSrc,
+      timestamp: new Date().toISOString(),
+      type: "faceMismatch", 
+    };
+
+    await axios.post("http://localhost:5000/api/violation", violationData);
+    setViolationCount((prev) => {
+      const newCount = prev + 1;
+      if (newCount >= 3) {
+        setTimeout(() => {
+          playAlertSound("critical");
+          alert("Exam terminated due to multiple violations.");
+        }, 0);
+        terminateExam();
+      }
+      return newCount;
+    });
+
+  } catch (err) {
+    console.error("Error analyzing face", err);
+  }
+};
 
   useEffect(() => {
     if (permissionsGranted && !examTerminated) {
-      const interval = setInterval(captureAndSendImage, 60000);
+      const interval = setInterval(captureAndSendImage, 30000);
       return () => clearInterval(interval);
     }
   }, [permissionsGranted, examTerminated]);
@@ -224,7 +243,7 @@ const ContinuousAuthWithoutSpeech = () => {
     setExamTerminated(true);
     setTimeout(() => {
       playAlertSound();
-      alert("✖ Exam has been terminated due to multiple violations!");
+      alert("Exam has been terminated due to multiple violations!");
     }, 0);
     window.location.replace("/exam-ended");
   };
@@ -287,4 +306,4 @@ const ContinuousAuthWithoutSpeech = () => {
   );
 };
 
-export default ContinuousAuthWithoutSpeech;
+export default ContinuousAuth;
