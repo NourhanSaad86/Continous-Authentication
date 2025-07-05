@@ -109,18 +109,18 @@ const ContinuousAuth = () => {
         if (count === 4) {
           setTimeout(() => {
             playAlertSound("warning");
-            alert("⚠ You have been absent for 5 seconds four times. Next time you will be removed from the exam.");
+            alert("You have been absent for 5 seconds four times. Next time you will be removed from the exam.");
           }, 0);
         } else if (count >= 5) {
           setTimeout(() => {
             playAlertSound("critical");
-            alert("✖ You have been absent for 5 seconds five times. Exam will be terminated.");
+            alert("You have been absent for 5 seconds five times. Exam will be terminated.");
           }, 0);
           terminateExam();
         } else {
           setTimeout(() => {
             playAlertSound("normal");
-            alert(`⚠ Face not detected for 5 seconds. This is your ${count}th absence.`);
+            alert(`Face not detected for 5 seconds. This is your ${count}th absence.`);
           }, 0);
         }
         return count;
@@ -165,7 +165,6 @@ const ContinuousAuth = () => {
       .withFaceLandmarks()
       .withFaceDescriptor();
 
-    // لو نوع المخالفة "absence" مش هنحتاج نحلل الوجه، فقط نحفظ الصورة كدليل
     if (violationType === "absence" || !detection) {
       console.log("Sending absence violation...");
       const violationData = {
@@ -180,7 +179,6 @@ const ContinuousAuth = () => {
       return;
     }
 
-    // تحقق من تطابق الوجه
     if (!referenceDescriptorRef.current) {
       referenceDescriptorRef.current = detection.descriptor;
       console.log("First face detected and set as reference");
@@ -193,17 +191,17 @@ const ContinuousAuth = () => {
     console.log(`Similarity Score: ${similarity.toFixed(2)}%`);
 
     const threshold = 0.7;
-    const similarityThreshold = 55;
+    const similarityThreshold = 60;
 
     if (distance <= threshold && similarity >= similarityThreshold) {
       console.log("Face matched successfully (based on distance and similarity)");
       return;
     }
 
-    console.log("⚠️ Different person detected! Sending violation.");
+    console.log("Different person detected! Sending violation.");
     setTimeout(() => {
       playAlertSound("warning");
-      alert("⚠️ Different person detected!");
+      alert("Different person detected!");
     }, 0);
 
     const violationData = {
